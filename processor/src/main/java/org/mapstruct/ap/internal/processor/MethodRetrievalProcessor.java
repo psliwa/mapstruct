@@ -21,6 +21,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeKind;
+import javax.lang.model.util.ElementFilter;
 
 import org.mapstruct.ap.internal.gem.BeanMappingGem;
 import org.mapstruct.ap.internal.gem.IterableMappingGem;
@@ -41,6 +42,7 @@ import org.mapstruct.ap.internal.model.source.MapperOptions;
 import org.mapstruct.ap.internal.model.source.MappingOptions;
 import org.mapstruct.ap.internal.model.source.ParameterProvidedMethods;
 import org.mapstruct.ap.internal.model.source.SourceMethod;
+import org.mapstruct.ap.internal.model.source.SourceMethods;
 import org.mapstruct.ap.internal.model.source.ValueMappingOptions;
 import org.mapstruct.ap.internal.option.Options;
 import org.mapstruct.ap.internal.util.AccessorNamingUtils;
@@ -60,7 +62,7 @@ import org.mapstruct.ap.spi.EnumTransformationStrategy;
  *
  * @author Gunnar Morling
  */
-public class MethodRetrievalProcessor implements ModelElementProcessor<Void, List<SourceMethod>> {
+public class MethodRetrievalProcessor implements ModelElementProcessor<Void, SourceMethods> {
 
     private static final String JAVA_LANG_ANNOTATION_PGK = "java.lang.annotation";
     private static final String ORG_MAPSTRUCT_PKG = "org.mapstruct";
@@ -76,7 +78,7 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
     private Options options;
 
     @Override
-    public List<SourceMethod> process(ProcessorContext context, TypeElement mapperTypeElement, Void sourceModel) {
+    public SourceMethods process(ProcessorContext context, TypeElement mapperTypeElement, Void sourceModel) {
         this.messager = context.getMessager();
         this.typeFactory = context.getTypeFactory();
         this.accessorNaming = context.getAccessorNaming();
@@ -97,7 +99,8 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
             throw new AnnotationProcessingException(
                 "Couldn't retrieve @Mapper annotation",
                 mapperTypeElement,
-                mapperOptions.getAnnotationMirror() );
+                mapperOptions.getAnnotationMirror()
+            );
         }
 
         List<SourceMethod> prototypeMethods = retrievePrototypeMethods( mapperTypeElement, mapperOptions );
@@ -110,7 +113,7 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
     }
 
     private List<SourceMethod> retrievePrototypeMethods(TypeElement mapperTypeElement,
-            MapperOptions mapperAnnotation) {
+                                                        MapperOptions mapperAnnotation) {
         if ( !mapperAnnotation.hasMapperConfig() ) {
             return Collections.emptyList();
         }
@@ -150,37 +153,56 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
      *
      * @param usedMapper The type of interest (either the mapper to implement or a used mapper via @uses annotation)
      * @param mapperToImplement the top level type (mapper) that requires implementation
-     * @param mapperOptions the mapper config
+     * @param mapperOptions  the mapper config
      * @param prototypeMethods prototype methods defined in mapper config type
      * @return All mapping methods declared by the given type
      */
-    private List<SourceMethod> retrieveMethods(TypeElement usedMapper, TypeElement mapperToImplement,
-                                               MapperOptions mapperOptions, List<SourceMethod> prototypeMethods) {
+    private SourceMethods retrieveMethods(TypeElement usedMapper, TypeElement mapperToImplement,
+                                          MapperOptions mapperOptions, List<SourceMethod> prototypeMethods) {
         List<SourceMethod> methods = new ArrayList<>();
+        List<SourceMethod> constructors = new ArrayList<>();
 
-        for ( ExecutableElement executable : elementUtils.getAllEnclosedExecutableElements( usedMapper ) ) {
+        for ( ExecutableElement executable : elementUtils.getAllEnclosedExecutableElements(
+            usedMapper,
+            ElementFilter::methodsIn
+        ) ) {
             SourceMethod method = getMethod(
                 usedMapper,
                 executable,
                 mapperToImplement,
                 mapperOptions,
-                prototypeMethods );
+                prototypeMethods
+            );
 
             if ( method != null ) {
                 methods.add( method );
             }
         }
 
+        for ( ExecutableElement executable : elementUtils.getAllEnclosedExecutableElements(
+            usedMapper,
+            ElementFilter::constructorsIn
+        ) ) {
+            SourceMethod constructor = getConstructor( usedMapper, executable, mapperToImplement );
+
+            if ( constructor != null ) {
+                constructors.add( constructor );
+            }
+        }
+
+        SourceMethods sourceMethods = new SourceMethods( methods, constructors );
+
         //Add all methods of used mappers in order to reference them in the aggregated model
         if ( usedMapper.equals( mapperToImplement ) ) {
             for ( DeclaredType mapper : mapperOptions.uses() ) {
                 TypeElement usesMapperElement = asTypeElement( mapper );
                 if ( !mapperToImplement.equals( usesMapperElement ) ) {
-                    methods.addAll( retrieveMethods(
+                    sourceMethods = sourceMethods.merge( retrieveMethods(
                         usesMapperElement,
                         mapperToImplement,
                         mapperOptions,
-                        prototypeMethods ) );
+                        prototypeMethods
+                    ) );
                 }
                 else {
                     messager.printMessage(
@@ -193,11 +215,34 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
             }
         }
 
-        return methods;
+        return sourceMethods;
     }
 
     private TypeElement asTypeElement(DeclaredType type) {
         return (TypeElement) type.asElement();
+    }
+
+    private SourceMethod getConstructor(TypeElement usedMapper,
+                                        ExecutableElement method,
+                                        TypeElement mapperToImplement) {
+
+        ExecutableType methodType = typeFactory.getMethodType( (DeclaredType) usedMapper.asType(), method );
+        List<Parameter> parameters = typeFactory.getParameters( methodType, method );
+
+        Type usedMapperAsType = typeFactory.getType( usedMapper );
+        Type definingType = typeFactory.getType( method.getEnclosingElement().asType() );
+        List<Type> exceptionTypes = typeFactory.getThrownTypes( methodType );
+        return new SourceMethod.Builder()
+            .setDeclaringMapper( usedMapper.equals( mapperToImplement ) ? null : usedMapperAsType )
+            .setDefininingType( definingType )
+            .setExecutable( method )
+            .setParameters( parameters )
+            .setExceptionTypes( exceptionTypes )
+            .setTypeUtils( typeUtils )
+            .setTypeFactory( typeFactory )
+            .setReturnType( typeFactory.getReturnType( methodType ) )
+            .setVerboseLogging( options.isVerbose() )
+            .build();
     }
 
     private SourceMethod getMethod(TypeElement usedMapper,
@@ -215,13 +260,15 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
 
         //add method with property mappings if an implementation needs to be generated
         if ( ( usedMapper.equals( mapperToImplement ) ) && methodRequiresImplementation ) {
-            return getMethodRequiringImplementation( methodType,
+            return getMethodRequiringImplementation(
+                methodType,
                 method,
                 parameters,
                 containsTargetTypeParameter,
                 mapperOptions,
                 prototypeMethods,
-                mapperToImplement );
+                mapperToImplement
+            );
         }
         // otherwise add reference to existing mapper method
         else if ( isValidReferencedMethod( parameters ) || isValidFactoryMethod( method, parameters, returnType )
@@ -234,11 +281,11 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
     }
 
     private SourceMethod getMethodRequiringImplementation(ExecutableType methodType, ExecutableElement method,
-            List<Parameter> parameters,
-            boolean containsTargetTypeParameter,
-            MapperOptions mapperOptions,
-            List<SourceMethod> prototypeMethods,
-            TypeElement mapperToImplement) {
+                                                          List<Parameter> parameters,
+                                                          boolean containsTargetTypeParameter,
+                                                          MapperOptions mapperOptions,
+                                                          List<SourceMethod> prototypeMethods,
+                                                          TypeElement mapperToImplement) {
         Type returnType = typeFactory.getReturnType( methodType );
         List<Type> exceptionTypes = typeFactory.getThrownTypes( methodType );
         List<Parameter> sourceParameters = Parameter.getSourceParameters( parameters );
@@ -269,7 +316,8 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
             method,
             messager,
             typeUtils,
-            typeFactory );
+            typeFactory
+        );
 
         Set<MappingOptions> mappingOptions =
             getMappings( method, method, beanMappingOptions, new LinkedHashSet<>(), new HashSet<>() );
@@ -318,7 +366,7 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
     }
 
     private ParameterProvidedMethods retrieveContextProvidedMethods(
-            List<Parameter> contextParameters, TypeElement mapperToImplement, MapperOptions mapperConfig) {
+        List<Parameter> contextParameters, TypeElement mapperToImplement, MapperOptions mapperConfig) {
 
         ParameterProvidedMethods.Builder builder = ParameterProvidedMethods.builder();
         for ( Parameter contextParam : contextParameters ) {
@@ -329,7 +377,8 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
                 contextParam.getType().getTypeElement(),
                 mapperToImplement,
                 mapperConfig,
-                Collections.emptyList() );
+                Collections.emptyList()
+            ).getMethods();
 
             List<SourceMethod> contextProvidedMethods = new ArrayList<>( contextParamMethods.size() );
             for ( SourceMethod sourceMethod : contextParamMethods ) {
@@ -455,8 +504,8 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
         }
 
         if ( returnType.getTypeMirror().getKind() != TypeKind.VOID &&
-                        !resultType.isAssignableTo( returnType ) &&
-                        !resultType.isAssignableTo( typeFactory.effectiveResultTypeFor( returnType, null ) ) ) {
+            !resultType.isAssignableTo( returnType ) &&
+            !resultType.isAssignableTo( typeFactory.effectiveResultTypeFor( returnType, null ) ) ) {
             messager.printMessage( method, Message.RETRIEVAL_NON_ASSIGNABLE_RESULTTYPE );
             return false;
         }
@@ -477,8 +526,8 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
         }
 
         if ( returnType.isTypeVar() || resultType.isTypeVar() ) {
-                messager.printMessage( method, Message.RETRIEVAL_TYPE_VAR_RESULT );
-                return false;
+            messager.printMessage( method, Message.RETRIEVAL_TYPE_VAR_RESULT );
+            return false;
         }
 
         Type parameterType = sourceParameters.get( 0 ).getType();
@@ -542,11 +591,10 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
      * Retrieves the mappings configured via {@code @Mapping} from the given
      * method.
      *
-     * @param method The method of interest
-     * @param element Element of interest: method, or (meta) annotation
-     * @param beanMapping options coming from bean mapping method
+     * @param method         The method of interest
+     * @param element        Element of interest: method, or (meta) annotation
+     * @param beanMapping    options coming from bean mapping method
      * @param mappingOptions LinkedSet of mappings found so far
-     *
      * @return The mappings for the given method, keyed by target property name
      */
     private Set<MappingOptions> getMappings(ExecutableElement method, Element element,
@@ -577,7 +625,7 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
         return mappingOptions;
     }
 
-    private boolean isAnnotationInPackage(Element element, String packageFQN ) {
+    private boolean isAnnotationInPackage(Element element, String packageFQN) {
         if ( ElementKind.ANNOTATION_TYPE == element.getKind() ) {
             return packageFQN.equals( elementUtils.getPackageOf( element ).getQualifiedName().toString() );
         }
@@ -596,7 +644,6 @@ public class MethodRetrievalProcessor implements ModelElementProcessor<Void, Lis
      * method.
      *
      * @param method The method of interest
-     *
      * @return The mappings for the given method, keyed by target property name
      */
     private List<ValueMappingOptions> getValueMappings(ExecutableElement method) {

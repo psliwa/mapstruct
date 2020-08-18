@@ -11,9 +11,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Set;
-
 import javax.lang.model.element.TypeElement;
 
+import org.mapstruct.ap.internal.gem.InjectionStrategyGem;
 import org.mapstruct.ap.internal.model.AnnotatedConstructor;
 import org.mapstruct.ap.internal.model.Annotation;
 import org.mapstruct.ap.internal.model.AnnotationMapperReference;
@@ -23,7 +23,6 @@ import org.mapstruct.ap.internal.model.Mapper;
 import org.mapstruct.ap.internal.model.MapperReference;
 import org.mapstruct.ap.internal.model.common.Type;
 import org.mapstruct.ap.internal.model.common.TypeFactory;
-import org.mapstruct.ap.internal.gem.InjectionStrategyGem;
 import org.mapstruct.ap.internal.model.source.MapperOptions;
 
 /**
@@ -111,10 +110,10 @@ public abstract class AnnotationBasedComponentModelProcessor implements ModelEle
     }
 
     private void buildConstructors(Mapper mapper) {
-        if ( !toMapperReferences( mapper.getFields() ).isEmpty() ) {
+        if ( !toMapperReferences( mapper.getFields() ).isEmpty() || mapper.getSuperClassConstructor() != null ) {
             AnnotatedConstructor annotatedConstructor = buildAnnotatedConstructorForMapper( mapper );
 
-            if ( !annotatedConstructor.getMapperReferences().isEmpty() ) {
+            if ( !annotatedConstructor.getArguments().isEmpty() ) {
                 mapper.setConstructor( annotatedConstructor );
             }
         }
@@ -149,6 +148,7 @@ public abstract class AnnotationBasedComponentModelProcessor implements ModelEle
             mapperReferencesForConstructor,
             mapperReferenceAnnotations,
             mapper.getConstructor(),
+            mapper.getSuperClassConstructor(),
             additionalPublicEmptyConstructor()
         );
     }
@@ -172,6 +172,7 @@ public abstract class AnnotationBasedComponentModelProcessor implements ModelEle
             mapperReferencesForConstructor,
             mapperReferenceAnnotations,
             decorator.getConstructor(),
+            null, // TODO PS: support for decorators
             additionalPublicEmptyConstructor()
         );
     }

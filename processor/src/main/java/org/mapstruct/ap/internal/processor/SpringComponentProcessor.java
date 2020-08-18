@@ -74,7 +74,8 @@ public class SpringComponentProcessor extends AnnotationBasedComponentModelProce
     private Annotation qualifierDelegate() {
         return new Annotation(
             getTypeFactory().getType( "org.springframework.beans.factory.annotation.Qualifier" ),
-            Collections.singletonList( "\"delegate\"" ) );
+            Collections.singletonList( "\"delegate\"" )
+        );
     }
 
     private Annotation primary() {

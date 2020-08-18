@@ -21,6 +21,13 @@ import javax.lang.model.util.ElementFilter;
 import org.mapstruct.ap.internal.util.ElementUtils;
 import org.mapstruct.ap.internal.util.TypeUtils;
 
+import org.mapstruct.ap.internal.gem.BuilderGem;
+import org.mapstruct.ap.internal.gem.DecoratedWithGem;
+import org.mapstruct.ap.internal.gem.InheritConfigurationGem;
+import org.mapstruct.ap.internal.gem.InheritInverseConfigurationGem;
+import org.mapstruct.ap.internal.gem.MapperGem;
+import org.mapstruct.ap.internal.gem.MappingInheritanceStrategyGem;
+import org.mapstruct.ap.internal.gem.NullValueMappingStrategyGem;
 import org.mapstruct.ap.internal.model.BeanMappingMethod;
 import org.mapstruct.ap.internal.model.ContainerMappingMethod;
 import org.mapstruct.ap.internal.model.ContainerMappingMethodBuilder;
@@ -45,14 +52,8 @@ import org.mapstruct.ap.internal.model.source.MappingMethodOptions;
 import org.mapstruct.ap.internal.model.source.Method;
 import org.mapstruct.ap.internal.model.source.SelectionParameters;
 import org.mapstruct.ap.internal.model.source.SourceMethod;
+import org.mapstruct.ap.internal.model.source.SourceMethods;
 import org.mapstruct.ap.internal.option.Options;
-import org.mapstruct.ap.internal.gem.BuilderGem;
-import org.mapstruct.ap.internal.gem.DecoratedWithGem;
-import org.mapstruct.ap.internal.gem.InheritConfigurationGem;
-import org.mapstruct.ap.internal.gem.InheritInverseConfigurationGem;
-import org.mapstruct.ap.internal.gem.MapperGem;
-import org.mapstruct.ap.internal.gem.MappingInheritanceStrategyGem;
-import org.mapstruct.ap.internal.gem.NullValueMappingStrategyGem;
 import org.mapstruct.ap.internal.processor.creation.MappingResolverImpl;
 import org.mapstruct.ap.internal.util.AccessorNamingUtils;
 import org.mapstruct.ap.internal.util.FormattingMessager;
@@ -71,7 +72,7 @@ import static org.mapstruct.ap.internal.util.Collections.join;
  *
  * @author Gunnar Morling
  */
-public class MapperCreationProcessor implements ModelElementProcessor<List<SourceMethod>, Mapper> {
+public class MapperCreationProcessor implements ModelElementProcessor<SourceMethods, Mapper> {
 
     private ElementUtils elementUtils;
     private TypeUtils typeUtils;
@@ -83,7 +84,7 @@ public class MapperCreationProcessor implements ModelElementProcessor<List<Sourc
     private MappingBuilderContext mappingContext;
 
     @Override
-    public Mapper process(ProcessorContext context, TypeElement mapperTypeElement, List<SourceMethod> sourceModel) {
+    public Mapper process(ProcessorContext context, TypeElement mapperTypeElement, SourceMethods sourceModel) {
         this.elementUtils = context.getElementUtils();
         this.typeUtils = context.getTypeUtils();
         this.messager = context.getMessager();
@@ -109,14 +110,14 @@ public class MapperCreationProcessor implements ModelElementProcessor<List<Sourc
                 elementUtils,
                 typeUtils,
                 typeFactory,
-                new ArrayList<>( sourceModel ),
+                new ArrayList<>( sourceModel.getMethods() ),
                 mapperReferences,
                 options.isVerbose()
             ),
             mapperTypeElement,
             //sourceModel is passed only to fetch the after/before mapping methods in lifecycleCallbackFactory;
             //Consider removing those methods directly into MappingBuilderContext.
-            Collections.unmodifiableList( sourceModel ),
+            Collections.unmodifiableList( sourceModel.getMethods() ),
             mapperReferences
         );
         this.mappingContext = ctx;
@@ -147,9 +148,9 @@ public class MapperCreationProcessor implements ModelElementProcessor<List<Sourc
         return result;
     }
 
-    private Mapper getMapper(TypeElement element, MapperOptions mapperOptions, List<SourceMethod> methods) {
+    private Mapper getMapper(TypeElement element, MapperOptions mapperOptions, SourceMethods methods) {
 
-        List<MappingMethod> mappingMethods = getMappingMethods( mapperOptions, methods );
+        List<MappingMethod> mappingMethods = getMappingMethods( mapperOptions, methods.getMethods() );
         mappingMethods.addAll( mappingContext.getUsedSupportedMappings() );
         mappingMethods.addAll( mappingContext.getMappingsToGenerate() );
 
@@ -167,11 +168,13 @@ public class MapperCreationProcessor implements ModelElementProcessor<List<Sourc
             .element( element )
             .methods( mappingMethods )
             .fields( fields )
-            .constructorFragments(  constructorFragments )
+            .superClassConstructors( methods.getConstructors() )
+            .constructorFragments( constructorFragments )
             .options( options )
             .versionInformation( versionInformation )
-            .decorator( getDecorator( element, methods, mapperOptions.implementationName(),
-                mapperOptions.implementationPackage(), getExtraImports( element, mapperOptions ) ) )
+            .decorator( getDecorator( element, methods.getMethods(), mapperOptions.implementationName(),
+                mapperOptions.implementationPackage(), getExtraImports( element, mapperOptions )
+            ) )
             .typeFactory( typeFactory )
             .elementUtils( elementUtils )
             .extraImports( getExtraImports( element, mapperOptions ) )
@@ -256,7 +259,7 @@ public class MapperCreationProcessor implements ModelElementProcessor<List<Sourc
         return decorator;
     }
 
-    private SortedSet<Type> getExtraImports(TypeElement element,  MapperOptions mapperOptions) {
+    private SortedSet<Type> getExtraImports(TypeElement element, MapperOptions mapperOptions) {
         SortedSet<Type> extraImports = new TreeSet<>();
 
 

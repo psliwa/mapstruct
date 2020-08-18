@@ -8,7 +8,6 @@ package org.mapstruct.ap.internal.model;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
-
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
@@ -16,6 +15,7 @@ import javax.lang.model.element.TypeElement;
 import org.mapstruct.ap.internal.model.common.Accessibility;
 import org.mapstruct.ap.internal.model.common.Type;
 import org.mapstruct.ap.internal.model.common.TypeFactory;
+import org.mapstruct.ap.internal.model.source.SourceMethod;
 import org.mapstruct.ap.internal.option.Options;
 import org.mapstruct.ap.internal.version.VersionInformation;
 
@@ -37,6 +37,7 @@ public class Mapper extends GeneratedType {
         private TypeElement element;
         private List<Field> fields;
         private Set<SupportingConstructorFragment> fragments;
+        private List<SourceMethod> superClassConstructors;
 
         private Decorator decorator;
         private String implName;
@@ -58,8 +59,13 @@ public class Mapper extends GeneratedType {
             return this;
         }
 
-        public Builder constructorFragments(Set<SupportingConstructorFragment>  fragments) {
+        public Builder constructorFragments(Set<SupportingConstructorFragment> fragments) {
             this.fragments = fragments;
+            return this;
+        }
+
+        public Builder superClassConstructors(List<SourceMethod> superClassConstructors) {
+            this.superClassConstructors = superClassConstructors;
             return this;
         }
 
@@ -90,6 +96,17 @@ public class Mapper extends GeneratedType {
             if ( !fragments.isEmpty() ) {
                 constructor = new NoArgumentConstructor( implementationName, fragments );
             }
+            final SuperClassConstructor superClassConstructor;
+            if ( superClassConstructors.size() == 1 ) {
+                SourceMethod sourceConstructor = superClassConstructors.get( 0 );
+                superClassConstructor = SuperClassConstructor.forComponentModels(
+                    implementationName,
+                    sourceConstructor
+                );
+            }
+            else {
+                superClassConstructor = null;
+            }
             return new Mapper(
                 typeFactory,
                 packageName,
@@ -104,6 +121,7 @@ public class Mapper extends GeneratedType {
                 versionInformation,
                 Accessibility.fromModifiers( element.getModifiers() ),
                 fields,
+                superClassConstructor,
                 constructor,
                 decorator,
                 extraImportedTypes
@@ -114,14 +132,15 @@ public class Mapper extends GeneratedType {
 
     private final boolean customPackage;
     private final boolean customImplName;
+    private final SuperClassConstructor superClassConstructor;
     private Decorator decorator;
 
-    @SuppressWarnings( "checkstyle:parameternumber" )
+    @SuppressWarnings("checkstyle:parameternumber")
     private Mapper(TypeFactory typeFactory, String packageName, String name, String superClassName,
                    String interfacePackage, String interfaceName, boolean customPackage, boolean customImplName,
                    List<MappingMethod> methods, Options options, VersionInformation versionInformation,
-                   Accessibility accessibility, List<Field> fields, Constructor constructor,
-                   Decorator decorator, SortedSet<Type> extraImportedTypes ) {
+                   Accessibility accessibility, List<Field> fields, SuperClassConstructor superClassConstructor,
+                   Constructor constructor, Decorator decorator, SortedSet<Type> extraImportedTypes) {
 
         super(
             typeFactory,
@@ -141,6 +160,7 @@ public class Mapper extends GeneratedType {
         this.customPackage = customPackage;
         this.customImplName = customImplName;
 
+        this.superClassConstructor = superClassConstructor;
         this.decorator = decorator;
     }
 
@@ -156,6 +176,10 @@ public class Mapper extends GeneratedType {
         return customImplName || customPackage;
     }
 
+    public SuperClassConstructor getSuperClassConstructor() {
+        return superClassConstructor;
+    }
+
     @Override
     protected String getTemplateName() {
         return getTemplateNameForClass( GeneratedType.class );
@@ -165,12 +189,12 @@ public class Mapper extends GeneratedType {
      * Returns the same as {@link Class#getName()} but without the package declaration.
      */
     public static String getFlatName(TypeElement element) {
-        if (!(element.getEnclosingElement() instanceof TypeElement)) {
+        if ( !( element.getEnclosingElement() instanceof TypeElement ) ) {
             return element.getSimpleName().toString();
         }
         StringBuilder nameBuilder = new StringBuilder( element.getSimpleName().toString() );
-        for (Element enclosing = element.getEnclosingElement(); enclosing instanceof TypeElement; enclosing =
-                enclosing.getEnclosingElement()) {
+        for ( Element enclosing = element.getEnclosingElement(); enclosing instanceof TypeElement; enclosing =
+            enclosing.getEnclosingElement() ) {
             nameBuilder.insert( 0, '$' );
             nameBuilder.insert( 0, enclosing.getSimpleName().toString() );
         }

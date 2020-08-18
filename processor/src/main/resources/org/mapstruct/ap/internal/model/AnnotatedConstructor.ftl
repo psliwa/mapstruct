@@ -13,8 +13,8 @@
 <#list annotations as annotation>
     <#nt><@includeModel object=annotation/>
 </#list>
-public ${name}(<#list mapperReferences as mapperReference><#list mapperReference.annotations as annotation><@includeModel object=annotation/> </#list><@includeModel object=mapperReference.type/> ${mapperReference.variableName}<#if mapperReference_has_next>, </#if></#list>) {
-    <#if noArgumentConstructor?? && !noArgumentConstructor.fragments.empty>this();</#if>
+public ${name}(<#list arguments as argument><#if argument.annotations??><#list argument.annotations as annotation><@includeModel object=annotation/> </#list></#if><@includeModel object=argument.type/> ${argument.variableName}<#if argument_has_next>, </#if></#list>)<#if superClassConstructor??><#list superClassConstructor.thrownTypes as thrownType><#if thrownType_index == 0> throws </#if>${thrownType.name}<#if thrownType_has_next>, </#if></#list></#if> {
+    <#if noArgumentConstructor?? && !noArgumentConstructor.fragments.empty>this();<#elseif superClassConstructor??>super( <#list superClassConstructor.arguments as argument>${argument.variableName}<#if argument_has_next>, </#if></#list> );</#if>
     <#list mapperReferences as mapperReference>
         this.${mapperReference.variableName} = ${mapperReference.variableName};
     </#list>

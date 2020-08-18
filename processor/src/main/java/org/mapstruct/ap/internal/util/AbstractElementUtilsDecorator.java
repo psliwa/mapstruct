@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+import java.util.function.Function;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
@@ -28,7 +29,6 @@ import javax.lang.model.util.Elements;
 import org.mapstruct.ap.spi.TypeHierarchyErroneousException;
 
 import static javax.lang.model.util.ElementFilter.fieldsIn;
-import static javax.lang.model.util.ElementFilter.methodsIn;
 
 public abstract class AbstractElementUtilsDecorator implements ElementUtils {
 
@@ -115,16 +115,19 @@ public abstract class AbstractElementUtilsDecorator implements ElementUtils {
     }
 
     @Override
-    public List<ExecutableElement> getAllEnclosedExecutableElements(TypeElement element) {
+    public List<ExecutableElement> getAllEnclosedExecutableElements(
+        TypeElement element,
+        Function<Iterable<? extends Element>, List<ExecutableElement>> executablesIn) {
+
         List<ExecutableElement> enclosedElements = new ArrayList<>();
         element = replaceTypeElementIfNecessary( element );
-        addEnclosedMethodsInHierarchy( enclosedElements, element, element );
+        addEnclosedMethodsInHierarchy( enclosedElements, element, element, executablesIn );
 
         return enclosedElements;
     }
 
     @Override
-    public List<VariableElement> getAllEnclosedFields( TypeElement element) {
+    public List<VariableElement> getAllEnclosedFields(TypeElement element) {
         List<VariableElement> enclosedElements = new ArrayList<>();
         element = replaceTypeElementIfNecessary( element );
         addEnclosedFieldsInHierarchy( enclosedElements, element, element );
@@ -132,8 +135,11 @@ public abstract class AbstractElementUtilsDecorator implements ElementUtils {
         return enclosedElements;
     }
 
-    private void addEnclosedMethodsInHierarchy(List<ExecutableElement> alreadyAdded, TypeElement element,
-                                               TypeElement parentType) {
+    private void addEnclosedMethodsInHierarchy(
+        List<ExecutableElement> alreadyAdded, TypeElement element,
+        TypeElement parentType,
+        Function<Iterable<? extends Element>, List<ExecutableElement>> executablesIn) {
+
         if ( element != parentType ) { // otherwise the element was already checked for replacement
             element = replaceTypeElementIfNecessary( element );
         }
@@ -142,13 +148,14 @@ public abstract class AbstractElementUtilsDecorator implements ElementUtils {
             throw new TypeHierarchyErroneousException( element );
         }
 
-        addMethodNotYetOverridden( alreadyAdded, methodsIn( element.getEnclosedElements() ), parentType );
+        addMethodNotYetOverridden( alreadyAdded, executablesIn.apply( element.getEnclosedElements() ), parentType );
 
         if ( hasNonObjectSuperclass( element ) ) {
             addEnclosedMethodsInHierarchy(
                 alreadyAdded,
                 asTypeElement( element.getSuperclass() ),
-                parentType
+                parentType,
+                executablesIn
             );
         }
 
@@ -156,7 +163,8 @@ public abstract class AbstractElementUtilsDecorator implements ElementUtils {
             addEnclosedMethodsInHierarchy(
                 alreadyAdded,
                 asTypeElement( interfaceType ),
-                parentType
+                parentType,
+                executablesIn
             );
         }
 
@@ -224,8 +232,8 @@ public abstract class AbstractElementUtilsDecorator implements ElementUtils {
         return true;
     }
 
-    private void addEnclosedFieldsInHierarchy( List<VariableElement> alreadyAdded,
-                                               TypeElement element, TypeElement parentType) {
+    private void addEnclosedFieldsInHierarchy(List<VariableElement> alreadyAdded,
+                                              TypeElement element, TypeElement parentType) {
         if ( element != parentType ) { // otherwise the element was already checked for replacement
             element = replaceTypeElementIfNecessary( element );
         }

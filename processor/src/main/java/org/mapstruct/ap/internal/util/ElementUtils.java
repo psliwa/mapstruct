@@ -6,17 +6,20 @@
 package org.mapstruct.ap.internal.util;
 
 import java.util.List;
+import java.util.function.Function;
 import javax.annotation.processing.ProcessingEnvironment;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 
 import org.mapstruct.ap.internal.version.VersionInformation;
 
 public interface ElementUtils extends Elements {
 
-     static ElementUtils create(ProcessingEnvironment processingEnvironment, VersionInformation info ) {
+    static ElementUtils create(ProcessingEnvironment processingEnvironment, VersionInformation info) {
         if ( info.isEclipseJDTCompiler() ) {
             return new EclipseElementUtilsDecorator( processingEnvironment );
         }
@@ -33,14 +36,30 @@ public interface ElementUtils extends Elements {
      * @param element the element to inspect
      * @return the executable elements usable in the type
      */
-     List<ExecutableElement> getAllEnclosedExecutableElements(TypeElement element);
+    default List<ExecutableElement> getAllEnclosedExecutableElements(TypeElement element) {
+        return getAllEnclosedExecutableElements( element, ElementFilter::methodsIn );
+    }
+
+    /**
+     * Finds all executable elements within the given type element, including executable elements defined in super
+     * classes and implemented interfaces. Methods defined in {@link java.lang.Object},
+     * implementations of {@link java.lang.Object#equals(Object)} and private methods are ignored
+     *
+     * @param element       the element to inspect
+     * @param executablesIn function that finds executables in enclosed elements of the element
+     * @return the executable elements usable in the type
+     */
+    List<ExecutableElement> getAllEnclosedExecutableElements(
+        TypeElement element,
+        Function<Iterable<? extends Element>, List<ExecutableElement>> executablesIn);
+
 
     /**
      * Finds all variable elements within the given type element, including variable
      * elements defined in super classes and implemented interfaces and including the fields in the .
      *
-     * @param element      the element to inspect
+     * @param element the element to inspect
      * @return the executable elements usable in the type
      */
-     List<VariableElement> getAllEnclosedFields(TypeElement element);
+    List<VariableElement> getAllEnclosedFields(TypeElement element);
 }
